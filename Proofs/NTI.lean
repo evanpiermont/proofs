@@ -181,3 +181,163 @@ theorem someRep_imp_leniency (imp : A → A → Prop) :
       intro d hcd
       exact (r.rep a d).mpr
         (((r.rep a b).mp hab).trans (hrep.trans ((r.rep c d).mp hcd)))
+
+-- ==========================================
+-- Theorem 3: Plausibility Characterization
+-- ==========================================
+
+/-- The n-down-set m_a^n = {c | n c a} (predecessors of a under n). -/
+def down_set (n : A → A → Prop) (a : A) : Set A := { c | n c a }
+
+/-- Membership in down_set unfolds to the relation. -/
+private lemma mem_down_set {n : A → A → Prop} {a c : A} :
+    c ∈ down_set n a ↔ n c a :=
+  Iff.rfl
+
+/-- A plausibility representation witnessing n is plausible for R:
+    a joint state space with ver/fc representing R and tn representing n,
+    satisfying ver(a) ⊆ tn(a) ⊆ fc(a) for all a. -/
+structure PlausRep (R n : A → A → Prop) where
+  W   : Type
+  ver : A → Set W
+  fc  : A → Set W
+  tn  : A → Set W
+  rep : ∀ a b, R a b ↔ fc a ⊆ ver b       -- (R):  R iff fc(a) ⊆ ver(b)
+  sub : ∀ a b, n a b ↔ tn a ⊆ tn b         -- (P1): n iff tn(a) ⊆ tn(b)
+  con : ∀ a, ver a ⊆ tn a ∧ tn a ⊆ fc a   -- (P2): ver(a) ⊆ tn(a) ⊆ fc(a)
+
+/-- n is plausible for R: R ⊆ n, n is a preorder, and n ⊆ leniency(R).
+    Leniency is characterized by Theorem 2: n a b iff ver(a) ⊆ fc(b)
+    in every tight representation of R. -/
+structure IsPlausible (R n : A → A → Prop) : Prop where
+  n_refl  : ∀ a, n a a
+  n_trans : ∀ {a b c}, n a b → n b c → n a c
+  R_le_n  : ∀ a b, R a b → n a b
+  n_le    : ∀ a b, n a b → ∀ tr : TightRep R, tr.ver a ⊆ tr.fc b
+
+-- -------------------------------------------------------
+-- Theorem 3, Direction (sandwich → plausible):
+-- A plausibility representation implies IsPlausible.
+-- -------------------------------------------------------
+
+/-- Given a PlausRep, extract plausibility.
+    Key steps:
+    - n_refl:  tn a ⊆ tn a by reflexivity.
+    - n_trans: chain tn a ⊆ tn b ⊆ tn c.
+    - R_le_n:  chain tn a ⊆ fc a ⊆ ver b ⊆ tn b using (R) and (P2).
+    - n_le:    decompose z ∈ tr.ver a via tight_ver to find c with R c a and
+               z ∈ tr.fc c; chain fc c ⊆ ver a ⊆ tn a ⊆ tn b ⊆ fc b ⊆ ver d
+               through the PlausRep to obtain R c d; conclude via tr.rep. -/
+theorem plausRep_implies_plausible (n : A → A → Prop) (pr : PlausRep R n) :
+    IsPlausible R n where
+  n_refl a :=
+    (pr.sub a a).mpr (subset_refl _)
+  n_trans h1 h2 :=
+    (pr.sub _ _).mpr (((pr.sub _ _).mp h1).trans ((pr.sub _ _).mp h2))
+  R_le_n a b hab :=
+    (pr.sub a b).mpr
+      ((pr.con a).2.trans (((pr.rep a b).mp hab).trans (pr.con b).1))
+  n_le a b hab tr z hz := by
+    -- Decompose z ∈ tr.ver a using (T1): get c with R c a and z ∈ tr.fc c
+    rw [tr.tight_ver a] at hz
+    simp only [Set.mem_iUnion, Set.mem_setOf_eq] at hz
+    obtain ⟨c, hca, hzfc⟩ := hz
+    -- Suffices to show z ∈ tr.ver d for every d with R b d (by T2)
+    rw [tr.tight_fc b]
+    simp only [Set.mem_iInter, Set.mem_setOf_eq]
+    intro d hbd
+    -- Chain through PlausRep: fc c ⊆ ver a ⊆ tn a ⊆ tn b ⊆ fc b ⊆ ver d
+    -- This gives R c d; then tr.rep c d and z ∈ tr.fc c yields z ∈ tr.ver d.
+    have hRcd : R c d := (pr.rep c d).mpr
+      (((pr.rep c a).mp hca).trans
+        ((pr.con a).1.trans
+          (((pr.sub a b).mp hab).trans
+            ((pr.con b).2.trans ((pr.rep b d).mp hbd)))))
+    exact (tr.rep c d).mp hRcd hzfc
+
+-- -------------------------------------------------------
+-- Theorem 3, Direction (plausible → sandwich):
+-- IsPlausible yields a canonical PlausRep on state space A ⊕ A.
+-- The construction (W̄ = A from the canonical tight rep, A from n-downsets):
+--   ver(a) = inl(v̄(a))          ∪ inr(m_a^n)
+--   fc(a)  = inl(f̄_c(a))        ∪ inr(m_a^n)
+--   tn(a)  = inl(⋃_{c∈m_a^n} v̄(c)) ∪ inr(m_a^n)
+-- -------------------------------------------------------
+
+/-- The canonical plausibility representation on state space A ⊕ A. -/
+def plausCanonRep (n : A → A → Prop) (hp : IsPlausible R n) : PlausRep R n where
+  W   := A ⊕ A
+  ver a := Sum.inl '' v R a    ∪ Sum.inr '' down_set n a
+  fc  a := Sum.inl '' f_c R a  ∪ Sum.inr '' down_set n a
+  tn  a := Sum.inl '' (⋃ c ∈ down_set n a, v R c) ∪ Sum.inr '' down_set n a
+  rep := fun a b => by
+    constructor
+    · -- R a b → fc a ⊆ ver b
+      intro hab w hw
+      simp only [Set.mem_union, Set.mem_image, mem_down_set] at hw ⊢
+      rcases hw with ⟨w', hw'fc, rfl⟩ | ⟨c, hca, rfl⟩
+      · -- w = inl w' with w' ∈ f_c R a; by (R), w' ∈ v R b
+        exact Or.inl ⟨w', (representation_property R a b).mp hab hw'fc, rfl⟩
+      · -- w = inr c with n c a; n c b by transitivity (R a b → n a b)
+        exact Or.inr ⟨c, hp.n_trans hca (hp.R_le_n a b hab), rfl⟩
+    · -- fc a ⊆ ver b → R a b
+      -- Witness inl a ∈ fc a (since a ∈ f_c R a, the identity is in f_c)
+      intro hfc
+      have hainfc : Sum.inl a ∈ Sum.inl '' f_c R a ∪ Sum.inr '' down_set n a :=
+        Or.inl ⟨a, fun _ h => h, rfl⟩
+      have hainver := hfc hainfc
+      simp only [Set.mem_union, Set.mem_image, mem_down_set] at hainver
+      rcases hainver with (⟨w', hw'b, hinl⟩ | ⟨_, _, hinr⟩)
+      · -- Sum.inl w' = Sum.inl a implies w' = a; hw'b : a ∈ v R b means R a b
+        exact (Sum.inl.inj hinl) ▸ hw'b
+      · -- Sum.inr _ = Sum.inl a is a contradiction
+        simp at hinr
+  sub := fun a b => by
+    constructor
+    · -- n a b → tn a ⊆ tn b
+      intro hab w hw
+      simp only [Set.mem_union, Set.mem_image, Set.mem_iUnion, mem_down_set] at hw ⊢
+      rcases hw with ⟨w', ⟨c, hca, hw'vc⟩, rfl⟩ | ⟨c, hca, rfl⟩
+      · -- w = inl w', ∃ c with n c a and w' ∈ v R c; n c b by transitivity
+        exact Or.inl ⟨w', ⟨c, hp.n_trans hca hab, hw'vc⟩, rfl⟩
+      · -- w = inr c with n c a; n c b by transitivity
+        exact Or.inr ⟨c, hp.n_trans hca hab, rfl⟩
+    · -- tn a ⊆ tn b → n a b
+      -- Witness inr a ∈ tn a (since n a a by n_refl, so a ∈ m_a^n)
+      intro htn
+      have haintn : Sum.inr a ∈
+          Sum.inl '' (⋃ c ∈ down_set n a, v R c) ∪ Sum.inr '' down_set n a :=
+        Or.inr ⟨a, hp.n_refl a, rfl⟩
+      have haintnb := htn haintn
+      simp only [Set.mem_union, Set.mem_image, Set.mem_iUnion, mem_down_set] at haintnb
+      rcases haintnb with (⟨_, _, hinl⟩ | ⟨c, hcb, hinr⟩)
+      · -- Sum.inl _ = Sum.inr a is a contradiction
+        simp at hinl
+      · -- Sum.inr c = Sum.inr a implies c = a; hcb : n c b, so n a b
+        exact (Sum.inr.inj hinr) ▸ hcb
+  con := fun a => by
+    constructor
+    · -- ver a ⊆ tn a
+      intro w hw
+      simp only [Set.mem_union, Set.mem_image, Set.mem_iUnion, mem_down_set] at hw ⊢
+      rcases hw with ⟨w', hw'va, rfl⟩ | ⟨c, hca, rfl⟩
+      · -- w = inl w' with w' ∈ v R a; put w' in tn a using witness c = a (n a a)
+        exact Or.inl ⟨w', ⟨a, hp.n_refl a, hw'va⟩, rfl⟩
+      · -- w = inr c with n c a; directly inr c ∈ inr '' m_a^n ⊆ tn a
+        exact Or.inr ⟨c, hca, rfl⟩
+    · -- tn a ⊆ fc a
+      intro w hw
+      simp only [Set.mem_union, Set.mem_image, Set.mem_iUnion, mem_down_set] at hw ⊢
+      rcases hw with ⟨w', ⟨c, hca, hw'vc⟩, rfl⟩ | ⟨c, hca, rfl⟩
+      · -- w = inl w' with n c a and w' ∈ v R c
+        -- n_le c a hca on canonical tight rep gives v R c ⊆ f_c R a
+        exact Or.inl ⟨w', hp.n_le c a hca (canonTightRep R) hw'vc, rfl⟩
+      · -- w = inr c with n c a; directly inr c ∈ inr '' m_a^n ⊆ fc a
+        exact Or.inr ⟨c, hca, rfl⟩
+
+/-- Theorem 3 (Plausibility Characterization):
+    n is plausible for R iff it admits a plausibility representation. -/
+theorem plausibility_characterization (n : A → A → Prop) :
+    IsPlausible R n ↔ Nonempty (PlausRep R n) :=
+  ⟨fun hp  => ⟨plausCanonRep R n hp⟩,
+   fun ⟨pr⟩ => plausRep_implies_plausible R n pr⟩
