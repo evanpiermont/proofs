@@ -11,6 +11,13 @@ variable {A : Type}
 -- R represents the stringent implication relation (⇒)
 variable (R : A → A → Prop)
 
+/-- Relation composition: (r ⨾ s) x z iff ∃ y, r x y ∧ s y z -/
+def RelComp (r s : A → A → Prop) (a b : A) : Prop :=
+  ∃ c, r a c ∧ s c b
+
+-- We define a local infix operator for readability.
+local infixr:80 " ⨾ " => RelComp
+
 -- w_a and m_a
 def up_set (a : A) : Set A := { b | R a b }
 def down_set (a : A) : Set A := { b | R b a}
@@ -122,6 +129,70 @@ theorem exists_tight_rep : Nonempty (TightRep R) :=
   ⟨canonTightRep R⟩
 
 -- ==========================================
+-- Remark 1: Properties of Leniency
+-- ==========================================
+
+/-- (L1): R is transitive if and only if its leniency is reflexive. -/
+theorem R1_L1 :
+    (∀ a b c, R a b → R b c → R a c) ↔ (∀ a, leniency R a a) := by
+  constructor
+  · -- Forward (→): Assume R is transitive, show leniency is reflexive.
+    intro hTrans a c hca z hza
+    exact hTrans c a z hca hza
+  · -- Backward (←): Assume leniency is reflexive, show R is transitive.
+    intro hRefl a b c hab hbc
+    have hb_refl : leniency R b b := hRefl b
+    have hab : up_set R b ⊆ up_set R a := hb_refl a hab
+    exact hab hbc
+
+/-- (L2): If R is reflexive, then its leniency is transitive. -/
+theorem R1_L2 (hRefl : ∀ a, R a a) :
+    ∀ a b c, leniency R a b → leniency R b c → leniency R a c := by
+  -- Introduce our three transitivity variables and the two leniency assumptions
+  intro a b c hab hbc d hda
+  have hb_sub_hd : up_set R b ⊆ up_set R d := hab d hda
+  have hbb : R b b := hRefl b
+  have hc_sub_hb : up_set R c ⊆ up_set R b := hbc b hbb
+  exact hc_sub_hb.trans hb_sub_hd
+
+/-- (L3): If R is transitive, then R ⊆ leniency R. -/
+theorem remark1_L3 (hTrans : ∀ x y z, R x y → R y z → R x z) :
+    ∀ a b, R a b → leniency R a b := by
+  -- Introduce variables a, b and the assumption that R a b
+  intro a b hab c hca z hzb
+  have hcb : R c b := hTrans c a b hca hab
+  exact hTrans c b z hcb hzb
+
+/-- (L4): If R is reflexive, then leniency R ⊆ R. -/
+theorem remark1_L4 (hRefl : ∀ x, R x x) :
+    ∀ a b, leniency R a b → R a b := by
+  -- Introduce variables a, b and the assumption that leniency R a b holds
+  intro a b hab_len
+  have hba : up_set R b ⊆ up_set R a := hab_len a (hRefl a)
+  have hbb : b ∈ up_set R b := hRefl b
+  exact hba hbb
+
+/-- (L5): leniency is the largest relation `imp` such that (R ⨾ imp ⨾ R) ⊆ R. -/
+theorem remark1_L5_comp :
+    -- Part 1: leniency satisfies the "sandwich" property: (R ⨾ leniency R ⨾ R) ⊆ R
+    (∀ x y, (R ⨾ leniency R ⨾ R) x y → R x y) ∧
+    -- Part 2: If any imp' satisfies (R ⨾ imp' ⨾ R) ⊆ R, then imp' ⊆ leniency R
+    (∀ imp' : A → A → Prop,
+      (∀ x y, (R ⨾ imp' ⨾ R) x y → R x y) →
+      (∀ a b, imp' a b → leniency R a b)) := by
+  constructor
+  · -- Part 1: Prove leniency satisfies the property
+    intro x y hComp
+    rcases hComp with ⟨u, hxu, v, huv_len, hvy⟩
+    have hv_sub_hx : up_set R v ⊆ up_set R x := huv_len x hxu
+    exact hv_sub_hx hvy
+  · -- Part 2: Prove leniency is the largest (contains any other valid imp')
+    intro imp' hSandwich a b hab_imp c hca d hbd
+    apply hSandwich c d
+    exact ⟨a, hca, b, hab_imp, hbd⟩
+
+
+-- ==========================================
 -- Theorem 2: Characterization of Leniency
 -- ==========================================
 
@@ -138,12 +209,7 @@ theorem leniency_imp_allTightReps :
     intro hab tr z hz
     simp_rw [tr.tight_ver a, Set.mem_iUnion, Set.mem_setOf_eq] at hz
     rcases hz with ⟨c, hca, hzfc⟩
-
-    -- `hab` is directly the definition of leniency.
-    -- We can just apply it to `c` and `hca`.
     have hpush : up_set R b ⊆ up_set R c := hab c hca
-
-    -- Use T2: fc(b) = ⋂_{d ∈ w_b} ver(d)
     simp_rw [tr.tight_fc b, Set.mem_iInter, Set.mem_setOf_eq]
     intro d hbd
     exact (tr.rep c d).mp (hpush hbd) hzfc
@@ -173,8 +239,11 @@ theorem someRep_imp_leniency :
   · intro hExists
     obtain ⟨r, hrep⟩ := hExists
     intro c hca d hbd
-    exact (r.rep c d).mpr <| ((r.rep c a).mp hca).trans <| hrep.trans ((r.rep b d).mp hbd)
-
+    have chain : r.fc c ⊆ r.ver d := calc
+      r.fc c ⊆ r.ver a := (r.rep c a).mp hca
+      _      ⊆ r.fc b  := hrep
+      _      ⊆ r.ver d := (r.rep b d).mp hbd
+    exact (r.rep c d).mpr chain
 -- ==========================================
 -- Theorem 3: Plausibility Characterization
 -- ==========================================
