@@ -40,11 +40,16 @@ The paper states Theorem 1 for a *partial order* `≿`. The proof uses only refl
 and §3.1 assumes `≿` to be a preorder. Antisymmetry would in fact trivialise the revealed implication:
 `1_G ∼ 1_{H ∪ G}` would force `1_G = 1_{H ∪ G}`, i.e. `H ⊆ G`. Accordingly `Preference` is a preorder.
 -/
+
 import Mathlib.Order.Closure
 import Mathlib.Algebra.Notation.Indicator
 import Mathlib.Data.Set.Finite.Basic
 import Mathlib.Data.Fintype.Powerset
-import Mathlib.Basic.NNReal.Defs
+import Mathlib.Data.NNReal.Defs
+
+set_option linter.style.whitespace false
+set_option linter.style.longLine false
+set_option linter.style.show false
 
 open Set
 open scoped NNReal
@@ -166,8 +171,7 @@ theorem _root_.ClosureOperator.isCoherent (c : ClosureOperator (Set Ω)) :
 
 /-- **Characterisation of coherence (§3.3).** `π` is coherent iff
 `π(H) = ⋂ {P ∈ Π | H ⊆ P}` for every `H`. By `IsCoherent.univ_mem_conceivable` and
-`IsCoherent.sInter_mem_conceivable`, `Π` then contains `Ω` and is closed under intersections; these two
-closure properties are consequences of the displayed identity rather than additional hypotheses. -/
+`IsCoherent.sInter_mem_conceivable`, `Π` then contains `Ω` and is closed under intersections -/
 theorem isCoherent_iff_eq_sInter :
     π.IsCoherent ↔ ∀ H, π H = ⋂₀ {P | P ∈ π.conceivable ∧ H ⊆ P} := by
   constructor
